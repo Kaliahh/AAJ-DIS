@@ -1,7 +1,8 @@
 from pygrametl.datasources import SQLSource, MergeJoiningSource
-from pygrametl.tables import Dimension
+from pygrametl.tables import Dimension, CachedDimension
 import pygrametl
 import psycopg2 # pip install psycopg2-binary
+import datetime
 
 
 def main():
@@ -12,7 +13,21 @@ def main():
     membersSource   =   SQLSource(connection=con, query="SELECT id, year, gender FROM stregsystem.stregsystem_member", names=('sourceid', 'year_created', 'gender'))
     roomSource      =   SQLSource(connection=con, query="SELECT name FROM stregsystem.stregsystem_room")
 
-    productSource = SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_product")
+    productSource = SQLSource(connection=con, query=
+    """SELECT 
+        t1.pname AS product_name,
+        t1.active AS is_active,
+        t1.alcohol_content_ml,
+        max(CASE WHEN rn = 1 THEN t1.cname END) cat_01,
+        max(CASE WHEN rn = 2 THEN t1.cname END) cat_02, 
+        max(CASE WHEN rn = 3 THEN t1.cname END) cat_03
+        FROM (
+            select p.id, p.name AS pname, c.name AS cname, p.active, p.alcohol_content_ml ,Row_number() over(partition by p.id, p.name order by (select 1)) rn
+            FROM stregsystem.stregsystem_product p, stregsystem.stregsystem_category c, stregsystem.stregsystem_product_categories pc
+            WHERE p.id = pc.product_id
+                AND c.id = pc.category_id
+        ) t1
+        GROUP BY t1.id, t1.pname, t1.active, t1.alcohol_content_ml""")
 
     # productCategorySource = SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_product_categories")
     # productRoomSource = SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_product_rooms")
@@ -24,7 +39,6 @@ def main():
 
     dwconn = psycopg2.connect(database="fklubdw", user="postgres", password="admin", host="127.0.0.1")
     conn = pygrametl.ConnectionWrapper(connection=dwconn)
-
 
     # productDimension = Dimension(
     # name='product',
@@ -40,16 +54,10 @@ def main():
     # conn.commit()
     # conn.close()
 
-    types = ['Drikke', 'Miscellaneous', 'Spiselige varer', 'Events']
-    categories = ['Sodavand', 'Vitamin vand', 'Kaffe', 'Alkoholdige varer', 'Energidrik']
-    subCategories = ['Øl', 'Special øl', 'Hård spiritus', 'Spiritus']
-
-    
-
     productDimension = Dimension(
         name='product',
         key='productid',
-        attributes=['product_type', 'category', 'subcategory', 'product_name', 'isActive', 'alcohol_content_ml'],
+        attributes=['product_type', 'category', 'subcategory', 'product_name', 'is_active', 'alcohol_content_ml'],
         lookupatts=['productid']
     )
 
@@ -67,11 +75,26 @@ def main():
         lookupatts=['roomid']
     )
 
-    timeDimension = Dimension(
+    timeDimension = CachedDimension(
         name='time',
         key='timeid',
-        attributes=['year', 'month', 'day', 'time_of_day', 'season', 'day_of_week', 'isWeekday', 'holiday', 'event']
+        attributes=['year', 'month', 'day', 'time_of_day', 'season', 'day_of_week', 'is_weekday', 'holiday', 'event']
     )
+
+    categoryDict = {
+        'types': ['Drikke', 'Miscellaneous', 'Spiselige varer', 'Events'],
+        'categories': ['Sodavand', 'Vitamin vand', 'Kaffe', 'Alkoholdie varer', 'Energidrik'],
+        'subCategories': ['Øl', 'Special øl', 'Hård spiritus', 'Spiritus']
+    }
+
+    for product in productSource:
+        product['product_type'] = None
+        product['category'] = None
+        product['subcategory'] = None
+        categorizeCategory(product, product['cat_01'], categoryDict)
+        categorizeCategory(product, product['cat_02'], categoryDict)
+        categorizeCategory(product, product['cat_03'], categoryDict)
+        productDimension.insert(product)
 
     # Dict used for mapping datasource gender format to DW gender format
     genderDict = {
@@ -91,14 +114,54 @@ def main():
     [roomDimension.insert(room) for room in roomSource]
 
     for sale in salesSource:
-        timestamp = getTimestamp(sale['timestamp'])
-        timeDimension.insert(timestamp)
+        time = extractTimeFromTimestamp(sale['timestamp'])
+        timeDimension.ensure(time)
 
     conn.commit()
     conn.close()
 
     # We need a staging area for handling types, categories, and subcategories!!!
 
+def categorizeCategory(product, category, categoryTypes):
+    if category in categoryTypes['types']:
+        product['product_type'] = category
+    elif category in categoryTypes['categories']:
+        product['category'] = category
+    elif category in categoryTypes['subCategories']:
+        product['subcategory'] = category
+
+def extractTimeFromTimestamp(timestamp):
+    seasonDict = {
+        1: 'Winter',
+        2: 'Spring',
+        3: 'Summer',
+        4: 'Fall'
+    }
+
+    time = dict()
+    #attributes=['year', 'month', 'day', 'time_of_day', 'season', 'day_of_week', 'is_weekday', 'holiday', 'event']
+    time['year'] = timestamp.year
+    #time['month'] = timestamp.date.strftime("%B")
+    time['month'] = timestamp.month
+    time['day'] = timestamp.day
+    time['time_of_day'] = extractTimeOfDay(timestamp.hour)
+    time['season'] = seasonDict[timestamp.month%12 // 3 + 1]
+    time['day_of_week'] = timestamp.strftime('%A')
+    time['is_weekday'] = timestamp.weekday in range(0,5)
+    time['holiday'] = 'Not a holiday'
+    time['event'] = 'No event'
+
+    return time
+
+def extractTimeOfDay(hour : int):
+    if hour in range(6, 11):
+        return 'Morning'
+    elif hour in range(11, 13):
+        return 'Noon'
+    elif hour in range(13, 17):
+        return 'Afternoon'
+    else:
+        return 'Night'
 
 if __name__ == "__main__":
     main()
