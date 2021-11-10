@@ -1,5 +1,6 @@
+from typing import Type
 from pygrametl.datasources import SQLSource, MergeJoiningSource
-from pygrametl.tables import Dimension, CachedDimension
+from pygrametl.tables import Dimension, CachedDimension, FactTable, TypeOneSlowlyChangingDimension
 import pygrametl
 import psycopg2 # pip install psycopg2-binary
 import datetime
@@ -54,18 +55,20 @@ def main():
     # conn.commit()
     # conn.close()
 
-    productDimension = Dimension(
+    productDimension = TypeOneSlowlyChangingDimension(
         name='product',
         key='productid',
         attributes=['product_type', 'category', 'subcategory', 'product_name', 'is_active', 'alcohol_content_ml'],
-        lookupatts=['productid']
+        lookupatts=['productid'],
+        type1atts=['is_active']
     )
 
     memberDimension = Dimension(
         name='member',
         key='memberid',
         attributes=['year_created', 'gender', 'sourceid'],
-        lookupatts=['memberid']
+        lookupatts=['memberid'],
+        defaultidvalue = 1
     )
 
     roomDimension = Dimension(
@@ -78,7 +81,14 @@ def main():
     timeDimension = CachedDimension(
         name='time',
         key='timeid',
-        attributes=['year', 'month', 'day', 'time_of_day', 'season', 'day_of_week', 'is_weekday', 'holiday', 'event']
+        attributes=['year', 'month', 'day', 'time_of_day', 'season', 'day_of_week', 'is_weekday', 'holiday', 'event'],
+        lookupatts=['year', 'month', 'day', 'time_of_day']
+    )
+
+    salesFact = FactTable(
+        name='salesfact',
+        keyrefs=['memberid', 'productid', 'timeid', 'roomid'],
+        measures=['unit_sales', 'kroner_sales']
     )
 
     categoryDict = {
@@ -116,6 +126,12 @@ def main():
     for sale in salesSource:
         time = extractTimeFromTimestamp(sale['timestamp'])
         timeDimension.ensure(time)
+        sale['timeid'] = timeDimension.lookup(time)
+        sale['productid'] = productDimension.lookup(sale, {'productid': 'product_id'})
+        sale['memberid'] = memberDimension.lookup(sale, {'memberid': 'member_id'})
+        sale['roomid'] = roomDimension.lookup(sale, {'roomid': 'room_id'})
+        sale['unit_sales'] = 1
+        salesFact.ensure(sale, False, {'kroner_sales': 'price'})
 
     conn.commit()
     conn.close()

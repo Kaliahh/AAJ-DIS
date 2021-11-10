@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS product;
+DROP TABLE IF EXISTS product CASCADE;
 
 CREATE TABLE product (
 	productid serial PRIMARY KEY,
@@ -10,7 +10,7 @@ CREATE TABLE product (
 	alcohol_content_ml double precision
 );
 
-DROP TABLE IF EXISTS member;
+DROP TABLE IF EXISTS member CASCADE;
 
 CREATE TABLE member (
 	memberid SERIAL PRIMARY KEY,
@@ -19,14 +19,16 @@ CREATE TABLE member (
 	sourceid int
 );
 
-DROP TABLE IF EXISTS room;
+INSERT INTO member (year_created, gender, sourceid) values (0000, 'Undefined', 0);
+
+DROP TABLE IF EXISTS room CASCADE;
 
 CREATE TABLE room (
 	roomid SERIAL PRIMARY KEY,
 	name varchar(100)
 );
 
-DROP TABLE IF EXISTS time;
+DROP TABLE IF EXISTS time CASCADE;
 
 CREATE TABLE time(
 	timeid SERIAL PRIMARY KEY,
@@ -41,3 +43,18 @@ CREATE TABLE time(
 	event varchar(50)
 );
 	
+DROP TABLE IF EXISTS salesfact;
+
+CREATE TABLE salesfact(
+	timeid int,
+	productid int,
+	memberid int, 
+	roomid int,
+	kroner_sales int,
+	unit_sales int,
+	PRIMARY KEY (timeid, productid, memberid, roomid),
+	FOREIGN KEY (timeid) REFERENCES time (timeid),
+	FOREIGN KEY (productid) REFERENCES product (productid),
+	FOREIGN KEY (memberid) REFERENCES member (memberid),
+	FOREIGN KEY (roomid) REFERENCES room (roomid)
+);
