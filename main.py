@@ -1,9 +1,10 @@
 from typing import Type
-from pygrametl.datasources import SQLSource, MergeJoiningSource
+from pygrametl.datasources import SQLSource
 from pygrametl.tables import Dimension, CachedDimension, FactTable, TypeOneSlowlyChangingDimension
 import pygrametl
 import psycopg2 # pip install psycopg2-binary
 import datetime
+from bs4 import BeautifulSoup # pip install beautifulsoup4
 
 
 def main():
@@ -17,7 +18,7 @@ def main():
     productSource = SQLSource(connection=con, query=
     """SELECT 
         t1.pname AS product_name,
-        t1.active AS is_active,
+        t1.active,
         t1.alcohol_content_ml,
         max(CASE WHEN rn = 1 THEN t1.cname END) cat_01,
         max(CASE WHEN rn = 2 THEN t1.cname END) cat_02, 
@@ -30,7 +31,7 @@ def main():
         ) t1
         GROUP BY t1.id, t1.pname, t1.active, t1.alcohol_content_ml""")
 
-    # TODO: Clean the content of product_name data to remove all HTML tags.
+    # TODO(done): Clean the content of product_name data to remove all HTML tags.
 
     # TODO: Cleanup unused code
     # TODO: We need to aggregate down to our lowest granularity we have defined.
@@ -60,14 +61,18 @@ def main():
     # conn.commit()
     # conn.close()
 
-    # TODO: Fix product dimension such that a default "Unknown Product" can be mapped by default if not exists in the historic facts
-    # TODO: Map is_active from boolean values to strings representing active/inactive (potentially rename is_active to status)
+    #def idFinder(row, namemapping): 
+         
+
+    # TODO(Deprecated): Fix product dimension such that a default "Unknown Product" can be mapped by default if not exists in the historic facts
+    # Above comment will not solve the problem, as it is caused by something else. Further explaination above code for loading facttable
+    # TODO(Done): Map is_active from boolean values to strings representing active/inactive (potentially rename is_active to status)
     productDimension = TypeOneSlowlyChangingDimension(
         name='product',
         key='productid',
-        attributes=['product_type', 'category', 'subcategory', 'product_name', 'is_active', 'alcohol_content_ml'],
+        attributes=['product_type', 'category', 'subcategory', 'product_name', 'status', 'alcohol_content_ml'],
         lookupatts=['productid'],
-        type1atts=['is_active']
+        type1atts=['status']
     )
 
     memberDimension = Dimension(
@@ -78,7 +83,8 @@ def main():
         defaultidvalue = 1
     )
 
-    # TODO: Fix room dimension such that a default "Unknown Room" can be mapped by default if not exists in the historic facts
+    # TODO(Deprecated): Fix room dimension such that a default "Unknown Room" can be mapped by default if not exists in the historic facts
+    # All sales have a room, any errors are due to the one described in the large comment above the loading of the facttable
     roomDimension = Dimension(
         name='room',
         key='roomid',
@@ -86,11 +92,12 @@ def main():
         lookupatts=['roomid']
     )
 
+
     timeDimension = CachedDimension(
         name='time',
         key='timeid',
         attributes=['year', 'month', 'day', 'time_of_day', 'season', 'day_of_week', 'is_weekday', 'holiday', 'event'],
-        lookupatts=['year', 'month', 'day', 'time_of_day']
+        lookupatts=['year', 'month', 'day', 'time_of_day'],
     )
 
     # TODO: Measure kroner_sales needs to be in actual kroners and not øre's as ints
@@ -113,6 +120,8 @@ def main():
         categorizeCategory(product, product['cat_01'], categoryDict)
         categorizeCategory(product, product['cat_02'], categoryDict)
         categorizeCategory(product, product['cat_03'], categoryDict)
+        product['status'] = 'active' if product['active'] == True else 'inactive'
+        product['product_name'] = BeautifulSoup(product['product_name'], features="html.parser").text
         productDimension.insert(product)
 
     # Dict used for mapping datasource gender format to DW gender format
@@ -126,12 +135,23 @@ def main():
         member['gender'] = genderDict[member['gender']]
         memberDimension.insert(member)
 
-    #for room in roomSource:
-    #    roomDimension.insert(room)
+    for room in roomSource:
+        roomDimension.insert(room)
 
-    # one line version of above code
-    [roomDimension.insert(room) for room in roomSource]
+    # There is a significant mistake here
+    # We are doing lookups om the id's present in the source data
+    # These are not the same as the id surrogate keys in our data warehouse
+    # in fact we cannot determine what source id corresponds to the same item in the DW
+    # basically we are doing lookups on random id's that have absolutely no relation to 
+    # entires in our dimensions
 
+    # The null exceptions we met, were due to the fact that there is a big jump in the id's
+    # in the source data, this caused the product or member id we used for a lookup
+    # to be higher than any id in our DW tables
+
+    # The problem occurs for the first time at sale with id 399730 which is the sale of
+    # the product with id 1767, this is the jump in ids
+    # there is no element in our product dimension with an 1767, therefore the lookup fails
     for sale in salesSource:
         time = extractTimeFromTimestamp(sale['timestamp'])
         timeDimension.ensure(time)

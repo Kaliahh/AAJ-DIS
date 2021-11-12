@@ -6,9 +6,11 @@ CREATE TABLE product (
 	product_type varchar(100),
 	category varchar(100),
 	subcategory varchar(100),
-	is_active boolean,
+	status varchar(10),
 	alcohol_content_ml double precision
 );
+
+--INSERT INTO product (product_name, status, alcohol_content_ml) values ('undefined', 'inactive', 0);
 
 DROP TABLE IF EXISTS member CASCADE;
 
