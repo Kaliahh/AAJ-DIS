@@ -30,6 +30,11 @@ def main():
         ) t1
         GROUP BY t1.id, t1.pname, t1.active, t1.alcohol_content_ml""")
 
+    # TODO: Clean the content of product_name data to remove all HTML tags.
+
+    # TODO: Cleanup unused code
+    # TODO: We need to aggregate down to our lowest granularity we have defined.
+    
     # productCategorySource = SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_product_categories")
     # productRoomSource = SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_product_rooms")
 
@@ -55,6 +60,8 @@ def main():
     # conn.commit()
     # conn.close()
 
+    # TODO: Fix product dimension such that a default "Unknown Product" can be mapped by default if not exists in the historic facts
+    # TODO: Map is_active from boolean values to strings representing active/inactive (potentially rename is_active to status)
     productDimension = TypeOneSlowlyChangingDimension(
         name='product',
         key='productid',
@@ -71,6 +78,7 @@ def main():
         defaultidvalue = 1
     )
 
+    # TODO: Fix room dimension such that a default "Unknown Room" can be mapped by default if not exists in the historic facts
     roomDimension = Dimension(
         name='room',
         key='roomid',
@@ -85,6 +93,7 @@ def main():
         lookupatts=['year', 'month', 'day', 'time_of_day']
     )
 
+    # TODO: Measure kroner_sales needs to be in actual kroners and not øre's as ints
     salesFact = FactTable(
         name='salesfact',
         keyrefs=['memberid', 'productid', 'timeid', 'roomid'],
@@ -108,9 +117,9 @@ def main():
 
     # Dict used for mapping datasource gender format to DW gender format
     genderDict = {
-        'M': 'male',
-        'F': 'female',
-        'U': 'undefined'
+        'M': 'Male',
+        'F': 'Female',
+        'U': 'Undefined'
     }
     for member in membersSource:
         # Map gender format using genderDict
