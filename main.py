@@ -17,6 +17,7 @@ def main():
 
     productSource = SQLSource(connection=con, query=
     """SELECT 
+        t1.id,
         t1.pname AS product_name,
         t1.active,
         t1.alcohol_content_ml,
@@ -79,7 +80,7 @@ def main():
         name='member',
         key='memberid',
         attributes=['year_created', 'gender', 'sourceid'],
-        lookupatts=['memberid'],
+        lookupatts=['sourceid'],
         defaultidvalue = 1
     )
 
@@ -89,7 +90,8 @@ def main():
         name='room',
         key='roomid',
         attributes=['name'],
-        lookupatts=['roomid']
+        lookupatts=['roomid'],
+        defaultidvalue = 1
     )
 
 
@@ -113,6 +115,8 @@ def main():
         'subCategories': ['Øl', 'Special øl', 'Hård spiritus', 'Spiritus']
     }
 
+    productMappingDict = {}
+
     for product in productSource:
         product['product_type'] = None
         product['category'] = None
@@ -122,7 +126,8 @@ def main():
         categorizeCategory(product, product['cat_03'], categoryDict)
         product['status'] = 'active' if product['active'] == True else 'inactive'
         product['product_name'] = BeautifulSoup(product['product_name'], features="html.parser").text
-        productDimension.insert(product)
+        dwkey = productDimension.insert(product)
+        productMappingDict[dwkey] = product['id']
 
     # Dict used for mapping datasource gender format to DW gender format
     genderDict = {
@@ -156,7 +161,7 @@ def main():
         time = extractTimeFromTimestamp(sale['timestamp'])
         timeDimension.ensure(time)
         sale['timeid'] = timeDimension.lookup(time)
-        sale['productid'] = productDimension.lookup(sale, {'productid': 'product_id'})
+        sale['productid'] = productDimension.lookup(productMappingDict, {sale['productid']: 'product_id'})
         sale['memberid'] = memberDimension.lookup(sale, {'memberid': 'member_id'})
         sale['roomid'] = roomDimension.lookup(sale, {'roomid': 'room_id'})
         sale['unit_sales'] = 1

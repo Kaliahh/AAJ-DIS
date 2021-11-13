@@ -10,7 +10,7 @@ CREATE TABLE product (
 	alcohol_content_ml double precision
 );
 
---INSERT INTO product (product_name, status, alcohol_content_ml) values ('undefined', 'inactive', 0);
+INSERT INTO product (product_name, status, alcohol_content_ml) values ('undefined', 'inactive', 0);
 
 DROP TABLE IF EXISTS member CASCADE;
 
@@ -29,6 +29,8 @@ CREATE TABLE room (
 	roomid SERIAL PRIMARY KEY,
 	name varchar(100)
 );
+
+INSERT INTO room (name) values ('Unknown room')
 
 DROP TABLE IF EXISTS time CASCADE;
 
