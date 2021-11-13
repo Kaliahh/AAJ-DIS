@@ -54,7 +54,7 @@ CREATE TABLE salesfact(
 	productid int,
 	memberid int, 
 	roomid int,
-	kroner_sales numeric(2),
+	kroner_sales numeric(10, 2),
 	unit_sales int,
 	PRIMARY KEY (timeid, productid, memberid, roomid),
 	FOREIGN KEY (timeid) REFERENCES time (timeid),
