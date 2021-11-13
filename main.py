@@ -127,7 +127,7 @@ def main():
         product['status'] = 'active' if product['active'] == True else 'inactive'
         product['product_name'] = BeautifulSoup(product['product_name'], features="html.parser").text
         dwkey = productDimension.insert(product)
-        productMappingDict[dwkey] = product['id']
+        productMappingDict[product['id']] = dwkey
 
     # Dict used for mapping datasource gender format to DW gender format
     genderDict = {
@@ -159,10 +159,10 @@ def main():
     # there is no element in our product dimension with an 1767, therefore the lookup fails
     for sale in salesSource:
         time = extractTimeFromTimestamp(sale['timestamp'])
-        timeDimension.ensure(time)
-        sale['timeid'] = timeDimension.lookup(time)
-        sale['productid'] = productDimension.lookup(productMappingDict, {sale['productid']: 'product_id'})
-        sale['memberid'] = memberDimension.lookup(sale, {'memberid': 'member_id'})
+        timeid = timeDimension.ensure(time)
+        sale['timeid'] = timeid
+        sale['productid'] = productMappingDict[sale['product_id']]
+        sale['memberid'] = memberDimension.lookup(sale, {'sourceid': 'member_id'})
         sale['roomid'] = roomDimension.lookup(sale, {'roomid': 'room_id'})
         sale['unit_sales'] = 1
         salesFact.ensure(sale, False, {'kroner_sales': 'price'})
