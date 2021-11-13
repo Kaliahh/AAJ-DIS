@@ -162,15 +162,5 @@ def extractTimeFromSale(sale):
 
     return sale
 
-def extractTimeOfDay(hour : int):
-    if hour in range(6, 11):
-        return 'Morning'
-    elif hour in range(11, 13):
-        return 'Noon'
-    elif hour in range(13, 17):
-        return 'Afternoon'
-    else:
-        return 'Night'
-
 if __name__ == "__main__":
     main()
