@@ -11,9 +11,8 @@ def main():
     con = psycopg2.connect(database="stregsystem", user="postgres", password="admin", host="127.0.0.1")
 
     categorySource  =   SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_category")
-    salesSource     =   SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_sale")
     membersSource   =   SQLSource(connection=con, query="SELECT id, year, gender FROM stregsystem.stregsystem_member", names=('sourceid', 'year_created', 'gender'))
-    roomSource      =   SQLSource(connection=con, query="SELECT name FROM stregsystem.stregsystem_room")
+    roomSource      =   SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_room")
 
     productSource = SQLSource(connection=con, query=
     """SELECT 
@@ -31,6 +30,37 @@ def main():
                 AND c.id = pc.category_id
         ) t1
         GROUP BY t1.id, t1.pname, t1.active, t1.alcohol_content_ml""")
+
+    salesSource = SQLSource(connection=con, query="""SELECT f.member_id,
+                    		f.product_id,
+                    		room_id,
+                    		f.year,
+                    		f.month,
+                    		f.season,
+                    		f.day,
+                    		f.day_of_week,
+                    		f.time_of_day,
+                    		ROUND((SUM(f.price)::float / 100)::numeric, 2) AS kroner_sales,
+                    		COUNT(*) AS unit_sales
+                    FROM (SELECT id, member_id, product_id, room_id, price,
+                    	  DATE_PART('year',timestamp) AS year, DATE_PART('month',timestamp) AS month, DATE_PART('day',timestamp) AS day, DATE_PART('hour',timestamp) AS hour,
+                    	  CASE
+                    	  	WHEN DATE_PART('hour',timestamp) IN (6, 7, 8, 9, 10) THEN 'Morning'
+                    	  	WHEN DATE_PART('hour',timestamp) IN (11, 12, 13) THEN 'Noon'
+                    	  	WHEN DATE_PART('hour',timestamp) IN (13, 14, 15, 16) THEN 'Afternoon'
+                    	  	ELSE 'Night'
+                    	  END AS time_of_day,
+                    	  to_char(s.timestamp, 'Day') AS day_of_week,
+                    	  CASE
+                    	  	WHEN DATE_PART('month',timestamp) IN (12, 1, 2) THEN 'Winter'
+                    	  	WHEN DATE_PART('month',timestamp) IN (3, 4, 5) THEN 'Spring'
+                    	  	WHEN DATE_PART('month',timestamp) IN (6, 7, 8) THEN 'Summer'
+                    	  	ELSE 'Fall'
+                    	  END as season
+                    	  FROM stregsystem.stregsystem_sale s) f
+                    GROUP BY f.member_id, f.product_id, room_id, f.year, f.month, f.season, f.day, f.day_of_week, f.time_of_day""")
+
+
 
     # TODO(done): Clean the content of product_name data to remove all HTML tags.
 
@@ -140,8 +170,11 @@ def main():
         member['gender'] = genderDict[member['gender']]
         memberDimension.insert(member)
 
+    roomMappingDict = {}
+
     for room in roomSource:
-        roomDimension.insert(room)
+        dwkey = roomDimension.insert(room)
+        roomMappingDict[room['id']] = dwkey
 
     # There is a significant mistake here
     # We are doing lookups om the id's present in the source data
@@ -158,14 +191,13 @@ def main():
     # the product with id 1767, this is the jump in ids
     # there is no element in our product dimension with an 1767, therefore the lookup fails
     for sale in salesSource:
-        time = extractTimeFromTimestamp(sale['timestamp'])
-        timeid = timeDimension.ensure(time)
-        sale['timeid'] = timeid
+        time = extractTimeFromSale(sale)
+
+        sale['timeid'] = timeDimension.ensure(time)
         sale['productid'] = productMappingDict[sale['product_id']]
         sale['memberid'] = memberDimension.lookup(sale, {'sourceid': 'member_id'})
-        sale['roomid'] = roomDimension.lookup(sale, {'roomid': 'room_id'})
-        sale['unit_sales'] = 1
-        salesFact.ensure(sale, False, {'kroner_sales': 'price'})
+        sale['roomid'] = roomMappingDict[sale['room_id']] #roomDimension.lookup(sale, {'roomid': 'room_id'})
+        salesFact.insert(sale)
 
     conn.commit()
     conn.close()
@@ -180,28 +212,27 @@ def categorizeCategory(product, category, categoryTypes):
     elif category in categoryTypes['subCategories']:
         product['subcategory'] = category
 
-def extractTimeFromTimestamp(timestamp):
-    seasonDict = {
-        1: 'Winter',
-        2: 'Spring',
-        3: 'Summer',
-        4: 'Fall'
-    }
+def extractTimeFromSale(sale):
+    #seasonDict = {
+    #    1: 'Winter',
+    #    2: 'Spring',
+    #    3: 'Summer',
+    #    4: 'Fall'
+    #}
 
-    time = dict()
     #attributes=['year', 'month', 'day', 'time_of_day', 'season', 'day_of_week', 'is_weekday', 'holiday', 'event']
-    time['year'] = timestamp.year
+    #time['year'] = timestamp.year
     #time['month'] = timestamp.date.strftime("%B")
-    time['month'] = timestamp.month
-    time['day'] = timestamp.day
-    time['time_of_day'] = extractTimeOfDay(timestamp.hour)
-    time['season'] = seasonDict[timestamp.month%12 // 3 + 1]
-    time['day_of_week'] = timestamp.strftime('%A')
-    time['is_weekday'] = timestamp.weekday in range(0,5)
-    time['holiday'] = 'Not a holiday'
-    time['event'] = 'No event'
+    #time['month'] = timestamp.month
+    #time['day'] = timestamp.day
+    #time['time_of_day'] = extractTimeOfDay(timestamp.hour)
+    #time['season'] = seasonDict[timestamp.month%12 // 3 + 1]
+    #time['day_of_week'] = timestamp.strftime('%A')
+    sale['is_weekday'] = sale['day_of_week'] in ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
+    sale['holiday'] = 'Not a holiday'
+    sale['event'] = 'No event'
 
-    return time
+    return sale
 
 def extractTimeOfDay(hour : int):
     if hour in range(6, 11):
