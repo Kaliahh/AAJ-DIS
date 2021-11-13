@@ -30,7 +30,7 @@ CREATE TABLE room (
 	name varchar(100)
 );
 
-INSERT INTO room (name) values ('Unknown room')
+INSERT INTO room (name) values ('Unknown room');
 
 DROP TABLE IF EXISTS time CASCADE;
 
