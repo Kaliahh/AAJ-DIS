@@ -164,7 +164,7 @@ def addDefaultCategories(product):
             product[fst(item)] = snd(item)
 
 def extractTimeFromSale(sale):
-    sale['is_weekday'] = sale['day_of_week'] in ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
+    sale['is_weekday'] = 'Yes' if sale['day_of_week'] in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] else 'No'
     sale['holiday'] = 'Not a holiday'
     sale['event'] = 'No event'
 

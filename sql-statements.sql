@@ -42,7 +42,7 @@ CREATE TABLE time(
 	time_of_day varchar(10),
 	season varchar(10),
 	day_of_week varchar(10),
-	is_weekday boolean,
+	is_weekday varchar(10),
 	holiday varchar(50),
 	event varchar(50)
 );
