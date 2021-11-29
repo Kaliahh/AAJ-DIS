@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup # pip install beautifulsoup4
 
 
 def main():
-    con = psycopg2.connect(database="stregsystem", user="postgres", password="admin", host="127.0.0.1")
+    con = psycopg2.connect(database="stregsystem", user="postgres", password="postgres", host="127.0.0.1")
 
     membersSource   =   SQLSource(connection=con, query="SELECT id, year, gender FROM stregsystem.stregsystem_member", names=('sourceid', 'year_created', 'gender'))
     roomSource      =   SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_room")
@@ -58,7 +58,7 @@ def main():
                 FROM stregsystem.stregsystem_sale s) f
         GROUP BY f.member_id, f.product_id, room_id, f.year, f.month, f.season, f.day, f.day_of_week, f.time_of_day""")
 
-    dwconn = psycopg2.connect(database="fklubdw", user="postgres", password="admin", host="127.0.0.1")
+    dwconn = psycopg2.connect(database="fklubdw", user="postgres", password="postgres", host="127.0.0.1")
     conn = pygrametl.ConnectionWrapper(connection=dwconn)
 
     productDimension = TypeOneSlowlyChangingDimension(
@@ -138,6 +138,12 @@ def main():
 
     for sale in salesSource:
         time = extractTimeFromSale(sale)
+
+        # Product lookup skal være navn. Join sales med product table
+
+        # Room lookup skal være navn
+
+        # Vi er faktisk ikke intereserede i de enkelte brugere, vi kan nøjes med gender og is_active (Det giver 3 kategorier)
 
         sale['timeid'] = timeDimension.ensure(time)
         sale['productid'] = productMappingDict[sale['product_id']]
