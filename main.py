@@ -113,6 +113,7 @@ def main():
         categorizeCategory(product, product['cat_01'], categoryDict)
         categorizeCategory(product, product['cat_02'], categoryDict)
         categorizeCategory(product, product['cat_03'], categoryDict)
+        addDefaultCategories(product)
         product['status'] = 'active' if product['active'] == True else 'inactive'
         product['product_name'] = BeautifulSoup(product['product_name'], features="html.parser").text
         dwkey = productDimension.insert(product)
@@ -155,12 +156,25 @@ def categorizeCategory(product, category, categoryTypes):
     elif category in categoryTypes['subCategories']:
         product['subcategory'] = category
 
+defaultCategories = [('product_type', 'No product_type'), ('category', 'No category'), ('subcategory', 'No subcategory')]
+
+def addDefaultCategories(product):
+    for item in defaultCategories:
+        if product[fst(item)] is None:
+            product[fst(item)] = snd(item)
+
 def extractTimeFromSale(sale):
     sale['is_weekday'] = sale['day_of_week'] in ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
     sale['holiday'] = 'Not a holiday'
     sale['event'] = 'No event'
 
     return sale
+
+def fst(tuple):
+    return tuple[0]
+
+def snd(tuple):
+    return tuple[1]
 
 if __name__ == "__main__":
     main()
