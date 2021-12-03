@@ -6,10 +6,10 @@ from bs4 import BeautifulSoup # pip install beautifulsoup4
 
 
 def main():
-    con = psycopg2.connect(database="stregsystem", user="postgres", password="postgres", host="127.0.0.1")
+    con = psycopg2.connect(database="stregsystem", user="postgres", password="admin", host="127.0.0.1")
 
-    membersSource   =   SQLSource(connection=con, query="SELECT id, year, gender FROM stregsystem.stregsystem_member", names=('sourceid', 'year_created', 'gender'))
-    roomSource      =   SQLSource(connection=con, query="SELECT * FROM stregsystem.stregsystem_room")
+    membersSource   =   SQLSource(connection=con, query="SELECT gender, active FROM stregsystem.stregsystem_member", names=('gender', 'is_active'))
+    roomSource      =   SQLSource(connection=con, query="SELECT name AS room_name FROM stregsystem.stregsystem_room")
 
     productSource = SQLSource(connection=con, query=
     """SELECT 
@@ -38,9 +38,13 @@ def main():
                 f.day,
                 f.day_of_week,
                 f.time_of_day,
+				p.name AS product_name,
+				r.name AS room_name,
+				m.gender,
+				m.active as is_active,
                 ROUND((SUM(f.price)::float / 100)::numeric, 2) AS kroner_sales,
                 COUNT(*) AS unit_sales
-        FROM (SELECT id, member_id, product_id, room_id, price,
+        FROM (SELECT s.id, member_id, product_id, room_id, s.price,
                 DATE_PART('year',timestamp) AS year, DATE_PART('month',timestamp) AS month, DATE_PART('day',timestamp) AS day, DATE_PART('hour',timestamp) AS hour,
                 CASE
                 WHEN DATE_PART('hour',timestamp) IN (6, 7, 8, 9, 10) THEN 'Morning'
@@ -55,33 +59,36 @@ def main():
                 WHEN DATE_PART('month',timestamp) IN (6, 7, 8) THEN 'Summer'
                 ELSE 'Fall'
                 END as season
-                FROM stregsystem.stregsystem_sale s) f
-        GROUP BY f.member_id, f.product_id, room_id, f.year, f.month, f.season, f.day, f.day_of_week, f.time_of_day""")
+                FROM stregsystem.stregsystem_sale s) f 
+        JOIN stregsystem.stregsystem_product AS p ON p.id = f.product_id
+		JOIN stregsystem.stregsystem_room AS r ON r.id = f.room_id
+		JOIN stregsystem.stregsystem_member AS m ON m.id = f.member_id
+        GROUP BY f.member_id, f.product_id, room_id, f.year, f.month, f.season, f.day, f.day_of_week, f.time_of_day, p.name, r.name, m.gender, m.active""")
 
-    dwconn = psycopg2.connect(database="fklubdw", user="postgres", password="postgres", host="127.0.0.1")
+    dwconn = psycopg2.connect(database="fklubdw", user="postgres", password="admin", host="127.0.0.1")
     conn = pygrametl.ConnectionWrapper(connection=dwconn)
 
     productDimension = TypeOneSlowlyChangingDimension(
         name='product',
         key='productid',
         attributes=['product_type', 'category', 'subcategory', 'product_name', 'status', 'alcohol_content_ml'],
-        lookupatts=['productid'],
+        lookupatts=['product_name'],
         type1atts=['status']
     )
 
     memberDimension = Dimension(
         name='member',
         key='memberid',
-        attributes=['year_created', 'gender', 'sourceid'],
-        lookupatts=['sourceid'],
+        attributes=['gender', 'is_active'],
+        lookupatts=['gender', 'is_active'],
         defaultidvalue = 1
     )
 
     roomDimension = Dimension(
         name='room',
         key='roomid',
-        attributes=['name'],
-        lookupatts=['roomid'],
+        attributes=['room_name'],
+        lookupatts=['room_name'],
         defaultidvalue = 1
     )
 
@@ -104,8 +111,6 @@ def main():
         'subCategories': ['Øl', 'Special øl', 'Hård spiritus', 'Spiritus']
     }
 
-    productMappingDict = {}
-
     for product in productSource:
         product['product_type'] = None
         product['category'] = None
@@ -116,8 +121,7 @@ def main():
         addDefaultCategories(product)
         product['status'] = 'active' if product['active'] == True else 'inactive'
         product['product_name'] = BeautifulSoup(product['product_name'], features="html.parser").text
-        dwkey = productDimension.insert(product)
-        productMappingDict[product['id']] = dwkey
+        productDimension.insert(product)
 
     # Dict used for mapping datasource gender format to DW gender format
     genderDict = {
@@ -128,13 +132,10 @@ def main():
     for member in membersSource:
         # Map gender format using genderDict
         member['gender'] = genderDict[member['gender']]
-        memberDimension.insert(member)
-
-    roomMappingDict = {}
+        memberDimension.ensure(member)
 
     for room in roomSource:
-        dwkey = roomDimension.insert(room)
-        roomMappingDict[room['id']] = dwkey
+        roomDimension.insert(room)
 
     for sale in salesSource:
         time = extractTimeFromSale(sale)
@@ -146,9 +147,12 @@ def main():
         # Vi er faktisk ikke intereserede i de enkelte brugere, vi kan nøjes med gender og is_active (Det giver 3 kategorier)
 
         sale['timeid'] = timeDimension.ensure(time)
-        sale['productid'] = productMappingDict[sale['product_id']]
-        sale['memberid'] = memberDimension.lookup(sale, {'sourceid': 'member_id'})
-        sale['roomid'] = roomMappingDict[sale['room_id']]
+        # sale['productid'] = productMappingDict[sale['product_id']]
+        sale['product_name'] = BeautifulSoup(sale['product_name'], features="html.parser").text
+        sale['productid'] = productDimension.lookup(sale)
+        sale['memberid'] = memberDimension.lookup(sale)
+        # sale['roomid'] = roomMappingDict[sale['room_id']]
+        sale['roomid'] = roomDimension.lookup(sale)
         salesFact.insert(sale)
 
     conn.commit()

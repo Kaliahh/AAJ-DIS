@@ -16,21 +16,20 @@ DROP TABLE IF EXISTS member CASCADE;
 
 CREATE TABLE member (
 	memberid SERIAL PRIMARY KEY,
-	year_created int,
 	gender varchar(20),
-	sourceid int
+	is_active boolean
 );
 
-INSERT INTO member (year_created, gender, sourceid) values (0000, 'Undefined', 0);
+--INSERT INTO member (year_created, gender, sourceid) values (0000, 'Undefined', 0);
 
 DROP TABLE IF EXISTS room CASCADE;
 
 CREATE TABLE room (
 	roomid SERIAL PRIMARY KEY,
-	name varchar(100)
+	room_name varchar(100)
 );
 
-INSERT INTO room (name) values ('Unknown room');
+INSERT INTO room (room_name) values ('Unknown room');
 
 DROP TABLE IF EXISTS time CASCADE;
 
