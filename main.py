@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup # pip install beautifulsoup4
 def main():
     con = psycopg2.connect(database="stregsystem", user="postgres", password="admin", host="127.0.0.1")
 
-    membersSource   =   SQLSource(connection=con, query="SELECT gender, active FROM stregsystem.stregsystem_member", names=('gender', 'is_active'))
+    membersSource   =   SQLSource(connection=con, query="SELECT gender, active FROM stregsystem.stregsystem_member GROUP BY gender, active", names=('gender', 'is_active'))
     roomSource      =   SQLSource(connection=con, query="SELECT name AS room_name FROM stregsystem.stregsystem_room")
 
     productSource = SQLSource(connection=con, query=
@@ -78,8 +78,7 @@ def main():
         name='member',
         key='memberid',
         attributes=['gender', 'is_active'],
-        lookupatts=['gender', 'is_active'],
-        defaultidvalue = 1
+        lookupatts=['gender', 'is_active']
     )
 
     roomDimension = Dimension(
