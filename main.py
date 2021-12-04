@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup # pip install beautifulsoup4
 
 
 def main():
-    con = psycopg2.connect(database="stregsystem", user="postgres", password="admin", host="127.0.0.1")
+    con = psycopg2.connect(database="stregsystem", user="postgres", password="ask", host="127.0.0.1")
 
     membersSource   =   SQLSource(connection=con, query="SELECT gender, active FROM stregsystem.stregsystem_member GROUP BY gender, active", names=('gender', 'is_active'))
     roomSource      =   SQLSource(connection=con, query="SELECT name AS room_name FROM stregsystem.stregsystem_room")
@@ -36,13 +36,13 @@ def main():
                 f.day,
                 f.day_of_week,
                 f.time_of_day,
-				p.name AS product_name,
-				r.name AS room_name,
-				m.gender,
-				m.active as is_active,
+                f.p_name AS product_name,
+                f.r_name AS room_name,
+                f.gender,
+                f.active as is_active,
                 ROUND((SUM(f.price)::float / 100)::numeric, 2) AS kroner_sales,
                 COUNT(*) AS unit_sales
-        FROM (SELECT s.id, member_id, product_id, room_id, s.price,
+        FROM (SELECT s.id, m.gender, m.active, p.name AS p_name, r.name AS r_name, s.price,
                 DATE_PART('year',timestamp) AS year, DATE_PART('month',timestamp) AS month, DATE_PART('day',timestamp) AS day, DATE_PART('hour',timestamp) AS hour,
                 CASE
                 WHEN DATE_PART('hour',timestamp) IN (6, 7, 8, 9, 10) THEN 'Morning'
@@ -57,15 +57,19 @@ def main():
                 WHEN DATE_PART('month',timestamp) IN (6, 7, 8) THEN 'Summer'
                 ELSE 'Fall'
                 END as season
-                FROM stregsystem.stregsystem_sale s) f 
-        JOIN stregsystem.stregsystem_product AS p ON p.id = f.product_id
-		JOIN stregsystem.stregsystem_room AS r ON r.id = f.room_id
-		JOIN stregsystem.stregsystem_member AS m ON m.id = f.member_id
-        GROUP BY m.active, m.gender, p.name, r.name, f.year, f.season, f.month, f.day, f.day_of_week, f.time_of_day""")
+                FROM stregsystem.stregsystem_sale s
+			 	INNER JOIN stregsystem.stregsystem_product AS p ON p.id = s.product_id
+        		INNER JOIN stregsystem.stregsystem_room AS r ON r.id = s.room_id
+        		INNER JOIN stregsystem.stregsystem_member AS m ON m.id = s.member_id
+			 ) f 
+        GROUP BY f.active, f.gender, f.p_name, f.r_name, f.year, f.season, f.month, f.day, f.day_of_week, f.time_of_day""")
 
-    dwconn = psycopg2.connect(database="fklubdw", user="postgres", password="admin", host="127.0.0.1")
+    dwconn = psycopg2.connect(database="fklubdw", user="postgres", password="ask", host="127.0.0.1")
     dwconn.cursor().execute(open('sql-statements.sql', 'r').read()) # Reset the DWH
     conn = pygrametl.ConnectionWrapper(connection=dwconn)
+
+    stagingconn = psycopg2.connect(database="etl_staging", user="postgres", password="ask", host="127.0.0.1")
+    stagingconn.cursor().execute(open("etl_staging.sql", "r").read()) # Reset staging
 
     productDimension = TypeOneSlowlyChangingDimension(
         name='product',
@@ -119,7 +123,9 @@ def main():
         addDefaultCategories(product)
         product['status'] = 'active' if product['active'] == True else 'inactive'
         product['product_name'] = BeautifulSoup(product['product_name'], features="html.parser").text
-        productDimension.insert(product)
+        productDimension.ensure(product)
+
+    conn.commit()
 
     # Dict used for mapping datasource gender format to DW gender format
     genderDict = {
@@ -132,9 +138,15 @@ def main():
         member['gender'] = genderDict[member['gender']]
         memberDimension.ensure(member)
 
+    conn.commit()
+
     for room in roomSource:
         roomDimension.insert(room)
 
+    conn.commit()
+
+    counter = 0
+    MAX_COUNT = 5000
     for sale in salesSource:
         time = extractTimeFromSale(sale)
 
@@ -147,12 +159,47 @@ def main():
         sale['timeid'] = timeDimension.ensure(time)
         # sale['productid'] = productMappingDict[sale['product_id']]
         sale['product_name'] = BeautifulSoup(sale['product_name'], features="html.parser").text
-        sale['productid'] = productDimension.lookup(sale)
+        #sale['productid'] = productDimension.lookup(sale)
         sale['gender'] = genderDict[sale['gender']]
-        sale['memberid'] = memberDimension.lookup(sale)
+        #sale['memberid'] = memberDimension.lookup(sale)
         # sale['roomid'] = roomMappingDict[sale['room_id']]
-        sale['roomid'] = roomDimension.lookup(sale)
-        salesFact.insert(sale)
+        #sale['roomid'] = roomDimension.lookup(sale)
+        #salesFact.insert(sale)
+
+        stagingconn.cursor().execute("""
+            INSERT INTO sales (year, month, season, day, day_of_week, time_of_day, product_name, room_name, gender, is_active, kroner_sales, unit_sales)
+            VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (sale['year'], sale['month'], sale['season'], sale['day'], sale['day_of_week'], sale['time_of_day'], sale['product_name'], sale['room_name'], sale['gender'], sale['is_active'], sale['kroner_sales'], sale['unit_sales']))
+        #if counter >= MAX_COUNT:
+        #    conn.commit()
+        #    counter = 0
+        #else:
+        #    counter += 1
+
+    stagingSource = SQLSource(connection=stagingconn, query="""
+        SELECT  year,
+                month,
+                season,
+                day,
+                day_of_week,
+                time_of_day,
+                product_name,
+                room_name,
+                gender,
+                is_active,
+                SUM(kroner_sales) AS kroner_sales,
+                SUM(unit_sales) AS unit_sales
+        from sales
+        GROUP BY is_active, gender, product_name, room_name, year, season, month, day, day_of_week, time_of_day
+    """)
+
+    for stagedSale in stagingSource:
+            stagedSale['timeid'] = timeDimension.lookup(stagedSale)
+            stagedSale['productid'] = productDimension.lookup(stagedSale)
+            stagedSale['memberid'] = memberDimension.lookup(stagedSale)
+            stagedSale['roomid'] = roomDimension.lookup(stagedSale)
+
+            salesFact.insert(stagedSale)
 
     conn.commit()
     conn.close()
