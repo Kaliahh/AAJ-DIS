@@ -29,9 +29,7 @@ def main():
         GROUP BY t1.id, t1.pname, t1.active, t1.alcohol_content_ml""")
 
     salesSource = SQLSource(connection=con, query=
-    """SELECT f.member_id,
-                f.product_id,
-                room_id,
+    """SELECT 
                 f.year,
                 f.month,
                 f.season,
@@ -63,7 +61,7 @@ def main():
         JOIN stregsystem.stregsystem_product AS p ON p.id = f.product_id
 		JOIN stregsystem.stregsystem_room AS r ON r.id = f.room_id
 		JOIN stregsystem.stregsystem_member AS m ON m.id = f.member_id
-        GROUP BY f.member_id, f.product_id, room_id, f.year, f.month, f.season, f.day, f.day_of_week, f.time_of_day, p.name, r.name, m.gender, m.active""")
+        GROUP BY m.active, m.gender, p.name, r.name, f.year, f.season, f.month, f.day, f.day_of_week, f.time_of_day""")
 
     dwconn = psycopg2.connect(database="fklubdw", user="postgres", password="admin", host="127.0.0.1")
     conn = pygrametl.ConnectionWrapper(connection=dwconn)
@@ -150,6 +148,7 @@ def main():
         # sale['productid'] = productMappingDict[sale['product_id']]
         sale['product_name'] = BeautifulSoup(sale['product_name'], features="html.parser").text
         sale['productid'] = productDimension.lookup(sale)
+        sale['gender'] = genderDict[sale['gender']]
         sale['memberid'] = memberDimension.lookup(sale)
         # sale['roomid'] = roomMappingDict[sale['room_id']]
         sale['roomid'] = roomDimension.lookup(sale)
