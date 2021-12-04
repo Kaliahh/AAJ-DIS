@@ -145,36 +145,18 @@ def main():
 
     conn.commit()
 
-    counter = 0
-    MAX_COUNT = 5000
     for sale in salesSource:
         time = extractTimeFromSale(sale)
 
-        # Product lookup skal være navn. Join sales med product table
-
-        # Room lookup skal være navn
-
-        # Vi er faktisk ikke intereserede i de enkelte brugere, vi kan nøjes med gender og is_active (Det giver 3 kategorier)
-
         sale['timeid'] = timeDimension.ensure(time)
-        # sale['productid'] = productMappingDict[sale['product_id']]
         sale['product_name'] = BeautifulSoup(sale['product_name'], features="html.parser").text
-        #sale['productid'] = productDimension.lookup(sale)
         sale['gender'] = genderDict[sale['gender']]
-        #sale['memberid'] = memberDimension.lookup(sale)
-        # sale['roomid'] = roomMappingDict[sale['room_id']]
-        #sale['roomid'] = roomDimension.lookup(sale)
-        #salesFact.insert(sale)
 
         stagingconn.cursor().execute("""
             INSERT INTO sales (year, month, season, day, day_of_week, time_of_day, product_name, room_name, gender, is_active, kroner_sales, unit_sales)
             VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (sale['year'], sale['month'], sale['season'], sale['day'], sale['day_of_week'], sale['time_of_day'], sale['product_name'], sale['room_name'], sale['gender'], sale['is_active'], sale['kroner_sales'], sale['unit_sales']))
-        #if counter >= MAX_COUNT:
-        #    conn.commit()
-        #    counter = 0
-        #else:
-        #    counter += 1
+        """, (sale['year'], sale['month'], sale['season'], sale['day'], sale['day_of_week'], sale['time_of_day'],
+                sale['product_name'], sale['room_name'], sale['gender'], sale['is_active'], sale['kroner_sales'], sale['unit_sales']))
 
     stagingSource = SQLSource(connection=stagingconn, query="""
         SELECT  year,
