@@ -64,6 +64,7 @@ def main():
         GROUP BY m.active, m.gender, p.name, r.name, f.year, f.season, f.month, f.day, f.day_of_week, f.time_of_day""")
 
     dwconn = psycopg2.connect(database="fklubdw", user="postgres", password="admin", host="127.0.0.1")
+    dwconn.cursor().execute(open('sql-statements.sql', 'r').read()) # Reset the DWH
     conn = pygrametl.ConnectionWrapper(connection=dwconn)
 
     productDimension = TypeOneSlowlyChangingDimension(
